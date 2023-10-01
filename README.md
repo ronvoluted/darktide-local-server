@@ -8,7 +8,7 @@ This is the underlying server for the [Darktide Local Server mod](https://www.ne
 
 ### Serving images
 
-The only[*](#Notes) way to load images into the game is to fetch them via URL. Using the local server avoids having to host images online which would have to serve requests every day for every mod user, every time they launched the game, for every image loaded.
+The only[*](#the-only-way-to-load-images) way to load images into the game is to fetch them via URL. Using the local server avoids having to host images online which would have to serve requests every day for every mod user, every time they launched the game, for every image loaded.
 
 #### Usage
 
