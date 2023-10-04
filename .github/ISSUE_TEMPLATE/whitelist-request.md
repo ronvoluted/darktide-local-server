@@ -1,6 +1,6 @@
 ---
 name: Whitelist request
-about: Suggest an idea for this project
+about: Request an executable be permitted to run commands
 title: Whitelist request
 labels: enhancement
 assignees: ronvoluted
