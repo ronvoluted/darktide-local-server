@@ -1,4 +1,4 @@
-# Darktide Local Server
+# Darktide Local Server (server)
 
 ### Small local server for use with Warhammer 40,000: Darktide mods
 
@@ -58,6 +58,10 @@ To use a different port number than `41012`, create a `config.json` file next to
 ```
 
 ## Notes
+
+### Single instance
+
+The server ensures only one instance of it is ever running so that multiple mods do not spawn multiple servers.
 
 ### Why is the default port 41012?
 
