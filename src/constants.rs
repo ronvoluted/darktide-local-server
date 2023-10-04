@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 #[derive(Default, Deserialize)]
@@ -14,6 +15,12 @@ pub struct RunRequest {
 pub struct RunResponse {
     pub success: bool,
     pub pid: Option<u32>,
+}
+
+pub fn allowed_executables() -> HashSet<String> {
+    let mut set = HashSet::new();
+    set.insert("ffplay_dt".to_string());
+    set
 }
 
 pub const MUTEX_NAME: &str = "Global\\DarktideLocalServerMutex";
