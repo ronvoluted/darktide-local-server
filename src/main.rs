@@ -1,29 +1,21 @@
 #![windows_subsystem = "windows"]
 
-use std::{
-    env,
-    ffi::OsStr,
-    fs::File,
-    io::Result as IoResult,
-    os::windows::ffi::OsStrExt,
-    ptr,
-};
 use serde_json::from_reader;
+use std::{env, ffi::OsStr, fs::File, io::Result as IoResult, os::windows::ffi::OsStrExt, ptr};
 use tiny_http::{Server, StatusCode};
 use winapi::{
-    shared::winerror::ERROR_ALREADY_EXISTS,
-    um::errhandlingapi::GetLastError,
+    shared::winerror::ERROR_ALREADY_EXISTS, um::errhandlingapi::GetLastError,
     um::synchapi::CreateMutexW,
 };
 
 mod constants;
 mod image_handler;
-mod utilities;
 mod run_handler;
+mod utilities;
 use constants::{Config, CONFIG_NAME, DEFAULT_PORT, MUTEX_NAME};
-use utilities::empty_response_with_status;
 use image_handler::handle_image_request;
 use run_handler::handle_run_request;
+use utilities::empty_response_with_status;
 
 fn main() -> IoResult<()> {
     // Named mutex for single instance check
@@ -53,8 +45,11 @@ fn main() -> IoResult<()> {
         Ok(server) => server,
         Err(err) => {
             eprintln!("Failed to create server: {}", err);
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, "Failed to create server"));
-        },
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Failed to create server",
+            ));
+        }
     };
 
     for mut request in server.incoming_requests() {
@@ -62,9 +57,11 @@ fn main() -> IoResult<()> {
         let method = request.method().to_string();
 
         let response = if method == "POST" && url.starts_with("/run") {
-            handle_run_request(&mut request).unwrap_or_else(|status| empty_response_with_status(status))
+            handle_run_request(&mut request)
+                .unwrap_or_else(|status| empty_response_with_status(status))
         } else if method == "GET" && url.starts_with("/image") {
-            handle_image_request(&request).unwrap_or_else(|| empty_response_with_status(StatusCode(400)))
+            handle_image_request(&request)
+                .unwrap_or_else(|| empty_response_with_status(StatusCode(400)))
         } else {
             empty_response_with_status(StatusCode(400))
         };
