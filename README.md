@@ -4,6 +4,8 @@
 
 This is the underlying server for the [Darktide Local Server mod](https://www.nexusmods.com/warhammer40kdarktide/mods/211). To use that library (which packages this server) in your mods refer to the [documentation in the repository's README](https://github.com/ronvoluted/darktide-mods/blob/main/DarktideLocalServer/README.md).
 
+Note that you will not be interfacing with this server directly, only the accompanying mod. This documentation is to provide lower level details and transparency.
+
 ## Features
 
 ### Serving images
