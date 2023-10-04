@@ -27,6 +27,10 @@ For example, to return the local image `C:\ForTheEmperor!.jpg`:
 
 In Lua we have access to `os.execute` and `io.popen` but both of them are blocking operations. There is a minimum 30ms threadlock even just for a a simple `echo For the Emperor!` each time you fire the call. Delegating command executions to the local server allows you to run these asynchronously.
 
+> **Important**
+> Only whitelisted executables are allowed. [File a request issue](https://github.com/ronvoluted/darktide-local-server/issues/new?assignees=ronvoluted&labels=enhancement&projects=&template=whitelist-request.md&title=Whitelist+request) to have a new filename added. Current whitelist:
+> - ffplay_dt
+
 #### Usage
 
 Send a POST request to `localhost:41012/run` with a `command` string in the body. For example, to open a new text document named "For the Emperor":
