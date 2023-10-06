@@ -12,7 +12,7 @@ e.g. calculator
 
 **What does running this executable do?**
 
-**What is the mod you will be using this for and how will it inerop with the executable?**
+**What is the mod you will be using this for and how will it interop with the executable?**
 
 **Please explain why this is safe for modded players to have running on their system**
 
