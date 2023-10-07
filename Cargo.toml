@@ -7,6 +7,10 @@ description = "Small local server for use with Warhammer 40,000: Darktide mods"
 repository = "https://github.com/ronvoluted/darktide-local-server"
 authors = ["ronvoluted (Seventeen)"]
 
+[profile.release]
+lto = true
+codegen-units = 1
+
 [dependencies]
 mime_guess = "2.0.4"
 regex = "1.9.5"
