@@ -1,7 +1,10 @@
 #![windows_subsystem = "windows"]
 
 use serde_json::from_reader;
-use std::{env, ffi::OsStr, fs::File, io::Result as IoResult, os::windows::ffi::OsStrExt, ptr};
+use std::{
+    env, ffi::OsStr, fs::File, io::Result as IoResult, os::windows::ffi::OsStrExt, ptr, thread,
+    time::Duration,
+};
 use tiny_http::{Server, StatusCode};
 use winapi::{
     shared::winerror::ERROR_ALREADY_EXISTS, um::errhandlingapi::GetLastError,
@@ -9,10 +12,12 @@ use winapi::{
 };
 
 mod constants;
+mod darktide;
 mod image_handler;
 mod run_handler;
 mod utilities;
 use constants::{Config, CONFIG_NAME, DEFAULT_PORT, MUTEX_NAME};
+use darktide::is_darktide_running;
 use image_handler::handle_image_request;
 use run_handler::handle_run_request;
 use utilities::empty_response_with_status;
@@ -51,6 +56,14 @@ fn main() -> IoResult<()> {
             ));
         }
     };
+
+    thread::spawn(move || loop {
+        if !is_darktide_running() {
+            println!("Darktide.exe is not running. Shutting down.");
+            std::process::exit(1);
+        }
+        thread::sleep(Duration::from_secs(1));
+    });
 
     for mut request in server.incoming_requests() {
         let url = request.url().to_string();
