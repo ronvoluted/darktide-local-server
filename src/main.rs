@@ -2,10 +2,12 @@
 
 use serde_json::from_reader;
 use std::{
-    env, ffi::OsStr, fs::File, io::Result as IoResult, os::windows::ffi::OsStrExt, ptr, thread,
-    time::Duration,
+    collections::HashMap, env, ffi::OsStr, fs::File, io::Result as IoResult,
+    os::windows::ffi::OsStrExt, ptr, thread, time::Duration,
 };
+use sysinfo::Pid;
 use tiny_http::{Server, StatusCode};
+use url::form_urlencoded;
 use winapi::{
     shared::winerror::ERROR_ALREADY_EXISTS, um::errhandlingapi::GetLastError,
     um::synchapi::CreateMutexW,
@@ -20,7 +22,7 @@ use constants::{Config, CONFIG_NAME, DEFAULT_PORT, MUTEX_NAME};
 use darktide::is_darktide_running;
 use image_handler::handle_image_request;
 use run_handler::handle_run_request;
-use utilities::empty_response_with_status;
+use utilities::{boolean_response_with_status, empty_response_with_status};
 
 fn main() -> IoResult<()> {
     // Named mutex for single instance check
@@ -72,6 +74,18 @@ fn main() -> IoResult<()> {
         if method == "GET" && url == "/shutdown" {
             let _ = request.respond(empty_response_with_status(StatusCode(200)));
             std::process::exit(0);
+        }
+
+        if method == "GET" && url.starts_with("/process_running") {
+            let query_string = url.splitn(2, '?').nth(1).unwrap_or_default();
+            let query: HashMap<String, String> = form_urlencoded::parse(query_string.as_bytes())
+                .into_owned()
+                .collect();
+            let pid: Pid = query.get("pid").and_then(|v| v.parse().ok()).unwrap_or(0.into());
+
+            let running = darktide::is_process_running(pid);
+            let _ = request.respond(utilities::boolean_response_with_status(StatusCode(200), running));
+            continue;
         }
 
         let response = if method == "POST" && url.starts_with("/run") {
