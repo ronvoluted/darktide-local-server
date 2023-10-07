@@ -56,6 +56,11 @@ fn main() -> IoResult<()> {
         let url = request.url().to_string();
         let method = request.method().to_string();
 
+        if method == "GET" && url == "/shutdown" {
+            let _ = request.respond(empty_response_with_status(StatusCode(200)));
+            std::process::exit(0);
+        }
+
         let response = if method == "POST" && url.starts_with("/run") {
             handle_run_request(&mut request)
                 .unwrap_or_else(|status| empty_response_with_status(status))
