@@ -7,19 +7,19 @@ use std::{
 };
 use sysinfo::Pid;
 use tiny_http::{Server, StatusCode};
-use url::form_urlencoded;
+use url::{form_urlencoded, Url};
 use winapi::{
     shared::winerror::ERROR_ALREADY_EXISTS, um::errhandlingapi::GetLastError,
     um::synchapi::CreateMutexW,
 };
 
 mod constants;
-mod darktide;
+mod processes;
 mod image_handler;
 mod run_handler;
 mod utilities;
 use constants::{Config, CONFIG_NAME, DEFAULT_PORT, MUTEX_NAME};
-use darktide::is_darktide_running;
+use processes::{is_darktide_running, is_process_running, stop_process};
 use image_handler::handle_image_request;
 use run_handler::handle_run_request;
 use utilities::{boolean_response_with_status, empty_response_with_status};
@@ -83,8 +83,23 @@ fn main() -> IoResult<()> {
                 .collect();
             let pid: Pid = query.get("pid").and_then(|v| v.parse().ok()).unwrap_or(0.into());
 
-            let running = darktide::is_process_running(pid);
-            let _ = request.respond(utilities::boolean_response_with_status(StatusCode(200), running));
+            let running = is_process_running(pid);
+            let _ = request.respond(boolean_response_with_status(StatusCode(200), running));
+            continue;
+        }
+
+        if method == "GET" && url.starts_with("/stop_process") {
+            let full_url = format!("http://localhost{}", url);
+            if let Ok(parsed_url) = Url::parse(&full_url) {
+                if let Some(pid_str) = parsed_url.query_pairs().find(|(key, _)| key == "pid") {
+                    let pid: u32 = pid_str.1.parse().unwrap_or(0);
+                    if processes::stop_process(pid) {
+                        let _ = request.respond(empty_response_with_status(StatusCode(200)));
+                        continue;
+                    }
+                }
+            }
+            let _ = request.respond(empty_response_with_status(StatusCode(400)));
             continue;
         }
 
