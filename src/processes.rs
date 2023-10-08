@@ -21,7 +21,7 @@ pub fn is_darktide_running() -> bool {
 pub fn is_process_running(pid: Pid) -> bool {
     let mut sys = System::new_all();
     sys.refresh_all();
-    sys.processes().contains_key(&(pid)) // Cast to Pid type
+    sys.processes().contains_key(&(pid))
 }
 
 pub fn stop_process(pid: u32) -> bool {
