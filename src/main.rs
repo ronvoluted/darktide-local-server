@@ -1,5 +1,6 @@
 #![windows_subsystem = "windows"]
 
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use serde::Serialize;
 use serde_json::from_reader;
 use std::{
@@ -65,7 +66,12 @@ fn main() -> IoResult<()> {
         }
     };
 
-    thread::spawn(move || loop {
+    let (process_running_sender, process_running_receiver): (
+        Sender<tiny_http::Request>,
+        Receiver<tiny_http::Request>,
+    ) = unbounded();
+
+    thread::spawn(|| loop {
         if !is_darktide_running() {
             println!("Darktide.exe is not running. Shutting down.");
             std::process::exit(1);
@@ -73,17 +79,13 @@ fn main() -> IoResult<()> {
         thread::sleep(Duration::from_secs(1));
     });
 
-    for mut request in server.incoming_requests() {
-        let url = request.url().to_string();
-        let method = request.method().to_string();
+    // Thread to handle /process_running requests
+    thread::spawn(move || {
+        for request in process_running_receiver.iter() {
+            let url = request.url().to_string();
+            let method = request.method().to_string();
 
-        if method == "GET" {
-            if url == "/shutdown" {
-                let _ = request.respond(empty_response_with_status(StatusCode(200)));
-                std::process::exit(0);
-            }
-
-            if url.starts_with("/process_running") {
+            if method == "GET" && url.starts_with("/process_running") {
                 let query_string = url.splitn(2, '?').nth(1).unwrap_or_default();
                 let query: HashMap<String, String> =
                     form_urlencoded::parse(query_string.as_bytes())
@@ -102,40 +104,68 @@ fn main() -> IoResult<()> {
                 let _ = request.respond(response);
                 continue;
             }
+        }
+    });
 
-            if url.starts_with("/stop_process") {
-                let full_url = format!("http://localhost{}", url);
-                if let Ok(parsed_url) = Url::parse(&full_url) {
-                    if let Some(pid_str) = parsed_url.query_pairs().find(|(key, _)| key == "pid") {
-                        let pid: u32 = pid_str.1.parse().unwrap_or(0);
-                        if stop_process(pid) {
-                            let _ = request.respond(empty_response_with_status(StatusCode(200)));
-                            continue;
+    // Main thread for other requests
+    thread::spawn(move || {
+        for mut request in server.incoming_requests() {
+            let url = request.url().to_string();
+            let method = request.method().to_string();
+
+            if method == "GET" {
+                if url == "/shutdown" {
+                    let _ = request.respond(empty_response_with_status(StatusCode(200)));
+                    std::process::exit(0);
+                }
+
+                if url.starts_with("/process_running") {
+                    // Send this request to the dedicated /process_running handling thread
+                    process_running_sender.send(request).unwrap();
+                    continue;
+                }
+
+                if url.starts_with("/stop_process") {
+                    let full_url = format!("http://localhost{}", url);
+                    if let Ok(parsed_url) = Url::parse(&full_url) {
+                        if let Some(pid_str) =
+                            parsed_url.query_pairs().find(|(key, _)| key == "pid")
+                        {
+                            let pid: u32 = pid_str.1.parse().unwrap_or(0);
+                            if stop_process(pid) {
+                                let _ =
+                                    request.respond(empty_response_with_status(StatusCode(200)));
+                                continue;
+                            }
                         }
                     }
+                    let _ = request.respond(empty_response_with_status(StatusCode(400)));
+                    continue;
                 }
-                let _ = request.respond(empty_response_with_status(StatusCode(400)));
-                continue;
+
+                if url.starts_with("/image") {
+                    let response = handle_image_request(&request)
+                        .unwrap_or_else(|| empty_response_with_status(StatusCode(400)));
+                    let _ = request.respond(response);
+                    continue;
+                }
             }
 
-            if url.starts_with("/image") {
-                let response = handle_image_request(&request)
-                    .unwrap_or_else(|| empty_response_with_status(StatusCode(400)));
-                let _ = request.respond(response);
-                continue;
+            if method == "POST" {
+                if url.starts_with("/run") {
+                    let response = handle_run_request(&mut request)
+                        .unwrap_or_else(|status| empty_response_with_status(status));
+                    let _ = request.respond(response);
+                    continue;
+                }
             }
+
+            let _ = request.respond(empty_response_with_status(StatusCode(400)));
         }
+    });
 
-        if method == "POST" {
-            if url.starts_with("/run") {
-                let response = handle_run_request(&mut request)
-                    .unwrap_or_else(|status| empty_response_with_status(status));
-                let _ = request.respond(response);
-                continue;
-            }
-        }
-
-        let _ = request.respond(empty_response_with_status(StatusCode(400)));
+    loop {
+        thread::sleep(Duration::from_secs(60));
     }
 
     Ok(())
