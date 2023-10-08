@@ -1,5 +1,6 @@
 #![windows_subsystem = "windows"]
 
+use serde::Serialize;
 use serde_json::from_reader;
 use std::{
     collections::HashMap, env, ffi::OsStr, fs::File, io::Result as IoResult,
@@ -22,7 +23,12 @@ use constants::{Config, CONFIG_NAME, DEFAULT_PORT, MUTEX_NAME};
 use image_handler::handle_image_request;
 use processes::{is_darktide_running, is_process_running, stop_process};
 use run_handler::handle_run_request;
-use utilities::{boolean_response_with_status, empty_response_with_status};
+use utilities::{empty_response_with_status, json_response_with_status};
+
+#[derive(Serialize)]
+struct ProcessRunningResponse {
+    process_is_running: bool,
+}
 
 fn main() -> IoResult<()> {
     // Named mutex for single instance check
@@ -89,7 +95,11 @@ fn main() -> IoResult<()> {
                     .unwrap_or(0.into());
 
                 let running = is_process_running(pid);
-                let _ = request.respond(boolean_response_with_status(StatusCode(200), running));
+                let response_data = ProcessRunningResponse {
+                    process_is_running: running,
+                };
+                let response = json_response_with_status(StatusCode(200), &response_data);
+                let _ = request.respond(response);
                 continue;
             }
 
