@@ -77,7 +77,7 @@ dependencies = [
 
 [[package]]
 name = "darktide-local-server"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "mime_guess",
  "regex",
