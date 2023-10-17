@@ -16,15 +16,20 @@ use winapi::{
 };
 
 mod constants;
-mod image_handler;
 mod processes;
-mod run_handler;
 mod utilities;
+mod handlers {
+    pub mod image;
+    pub mod run;
+}
+
 use constants::{Config, CONFIG_NAME, DEFAULT_PORT, MUTEX_NAME};
-use image_handler::handle_image_request;
 use processes::{is_darktide_running, is_process_running, stop_process};
-use run_handler::handle_run_request;
 use utilities::{empty_response_with_status, json_response_with_status};
+use handlers::{
+    image::handle_image_request,
+    run::handle_run_request,
+};
 
 #[derive(Serialize)]
 struct ProcessRunningResponse {
