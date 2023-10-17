@@ -21,15 +21,13 @@ mod utilities;
 mod handlers {
     pub mod image;
     pub mod run;
+    pub mod shutdown;
 }
 
 use constants::{Config, CONFIG_NAME, DEFAULT_PORT, MUTEX_NAME};
+use handlers::{image::handle_image_request, run::handle_run_request, shutdown::handle_shutdown_request};
 use processes::{is_darktide_running, is_process_running, stop_process};
 use utilities::{empty_response_with_status, json_response_with_status};
-use handlers::{
-    image::handle_image_request,
-    run::handle_run_request,
-};
 
 #[derive(Serialize)]
 struct ProcessRunningResponse {
@@ -120,8 +118,8 @@ fn main() -> IoResult<()> {
 
             if method == "GET" {
                 if url == "/shutdown" {
-                    let _ = request.respond(empty_response_with_status(StatusCode(200)));
-                    std::process::exit(0);
+                    // Call the new handle_shutdown_request
+                    handle_shutdown_request();
                 }
 
                 if url.starts_with("/process_running") {
