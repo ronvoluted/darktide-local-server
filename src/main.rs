@@ -4,12 +4,10 @@ use crossbeam::channel::{unbounded, Receiver, Sender};
 use serde::Serialize;
 use serde_json::from_reader;
 use std::{
-    collections::HashMap, env, ffi::OsStr, fs::File, io::Result as IoResult,
+    env, ffi::OsStr, fs::File, io::Result as IoResult,
     os::windows::ffi::OsStrExt, ptr, thread, time::Duration,
 };
-use sysinfo::Pid;
 use tiny_http::{Server, StatusCode};
-use url::{form_urlencoded, Url};
 use winapi::{
     shared::winerror::ERROR_ALREADY_EXISTS, um::errhandlingapi::GetLastError,
     um::synchapi::CreateMutexW,
@@ -20,13 +18,19 @@ mod processes;
 mod utilities;
 mod handlers {
     pub mod image;
+    pub mod process_running;
     pub mod run;
     pub mod shutdown;
+    pub mod stop_process;
 }
 
 use constants::{Config, CONFIG_NAME, DEFAULT_PORT, MUTEX_NAME};
-use handlers::{image::handle_image_request, run::handle_run_request, shutdown::handle_shutdown_request};
-use processes::{is_darktide_running, is_process_running, stop_process};
+use handlers::{
+    image::handle_image_request, process_running::handle_process_running_request,
+    run::handle_run_request, shutdown::handle_shutdown_request,
+    stop_process::handle_stop_process_request,
+};
+use processes::{is_darktide_running, is_process_running};
 use utilities::{empty_response_with_status, json_response_with_status};
 
 #[derive(Serialize)]
@@ -85,28 +89,8 @@ fn main() -> IoResult<()> {
     // Thread to handle /process_running requests
     thread::spawn(move || {
         for request in process_running_receiver.iter() {
-            let url = request.url().to_string();
-            let method = request.method().to_string();
-
-            if method == "GET" && url.starts_with("/process_running") {
-                let query_string = url.splitn(2, '?').nth(1).unwrap_or_default();
-                let query: HashMap<String, String> =
-                    form_urlencoded::parse(query_string.as_bytes())
-                        .into_owned()
-                        .collect();
-                let pid: Pid = query
-                    .get("pid")
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(0.into());
-
-                let running = is_process_running(pid);
-                let response_data = ProcessRunningResponse {
-                    process_is_running: running,
-                };
-                let response = json_response_with_status(StatusCode(200), &response_data);
-                let _ = request.respond(response);
-                continue;
-            }
+            let response = handle_process_running_request(&request, is_process_running);
+            let _ = request.respond(response.unwrap_or_else(|_| empty_response_with_status(StatusCode(400))));
         }
     });
 
@@ -123,26 +107,13 @@ fn main() -> IoResult<()> {
                 }
 
                 if url.starts_with("/process_running") {
-                    // Send this request to the dedicated /process_running handling thread
                     process_running_sender.send(request).unwrap();
                     continue;
                 }
 
                 if url.starts_with("/stop_process") {
-                    let full_url = format!("http://localhost{}", url);
-                    if let Ok(parsed_url) = Url::parse(&full_url) {
-                        if let Some(pid_str) =
-                            parsed_url.query_pairs().find(|(key, _)| key == "pid")
-                        {
-                            let pid: u32 = pid_str.1.parse().unwrap_or(0);
-                            if stop_process(pid) {
-                                let _ =
-                                    request.respond(empty_response_with_status(StatusCode(200)));
-                                continue;
-                            }
-                        }
-                    }
-                    let _ = request.respond(empty_response_with_status(StatusCode(400)));
+                    let response = handle_stop_process_request(&request);
+                    let _ = request.respond(response);
                     continue;
                 }
 
