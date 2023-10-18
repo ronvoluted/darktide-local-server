@@ -1,6 +1,6 @@
 [package]
 name = "darktide-local-server"
-version = "1.2.4"
+version = "1.2.6"
 edition = "2021"
 rust-version = "1.72"
 description = "Small local server for use with Warhammer 40,000: Darktide mods"
