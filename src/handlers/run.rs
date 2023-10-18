@@ -10,6 +10,7 @@ use winapi::um::winbase::CREATE_NO_WINDOW;
 
 use crate::constants::{allowed_executables, RunRequest, PID, SUCCESS};
 use crate::utilities::split_command;
+use crate::CREATED_PIDS;
 
 /// Run an executable with flags and return the PID of the process
 pub fn handle_run_request(request: &mut Request) -> Result<Response<Cursor<Vec<u8>>>, StatusCode> {
@@ -59,6 +60,8 @@ pub fn handle_run_request(request: &mut Request) -> Result<Response<Cursor<Vec<u
     {
         Ok(child) => {
             let pid = child.id();
+            let mut pids = CREATED_PIDS.lock().unwrap();
+            pids.insert(pid);
             let response_body = json!({ SUCCESS: true, PID: pid });
             let json_string = response_body.to_string();
             Ok(Response::from_string(json_string))

@@ -1,11 +1,12 @@
 #![windows_subsystem = "windows"]
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
+use lazy_static::lazy_static;
 use serde::Serialize;
 use serde_json::from_reader;
 use std::{
-    env, ffi::OsStr, fs::File, io::Result as IoResult,
-    os::windows::ffi::OsStrExt, ptr, thread, time::Duration,
+    collections::HashSet, env, ffi::OsStr, fs::File, io::Result as IoResult,
+    os::windows::ffi::OsStrExt, ptr, sync::Mutex, thread, time::Duration,
 };
 use tiny_http::{Server, StatusCode};
 use winapi::{
@@ -36,6 +37,10 @@ use utilities::{empty_response_with_status, json_response_with_status};
 #[derive(Serialize)]
 struct ProcessRunningResponse {
     process_is_running: bool,
+}
+
+lazy_static! {
+    static ref CREATED_PIDS: Mutex<HashSet<u32>> = Mutex::new(HashSet::new());
 }
 
 fn main() -> IoResult<()> {
