@@ -18,6 +18,7 @@ mod constants;
 mod processes;
 mod utilities;
 mod handlers {
+    pub mod dds_image;
     pub mod image;
     pub mod process_running;
     pub mod run;
@@ -27,12 +28,12 @@ mod handlers {
 
 use constants::{Config, CONFIG_NAME, DEFAULT_PORT, MUTEX_NAME};
 use handlers::{
-    image::handle_image_request, process_running::handle_process_running_request,
+    dds_image::handle_dds_image_request, image::handle_image_request, process_running::handle_process_running_request,
     run::handle_run_request, shutdown::handle_shutdown_request,
     stop_process::handle_stop_process_request,
 };
 use processes::{is_darktide_running, is_process_running};
-use utilities::{empty_response_with_status, json_response_with_status};
+use utilities::empty_response_with_status;
 
 #[derive(Serialize)]
 struct ProcessRunningResponse {
@@ -128,6 +129,13 @@ fn main() -> IoResult<()> {
                     let _ = request.respond(response);
                     continue;
                 }
+
+                if url.starts_with("/dds_image") {
+                    let response = handle_dds_image_request(&request)
+                        .unwrap_or_else(|| empty_response_with_status(StatusCode(400)));
+                    let _ = request.respond(response);
+                    continue;
+                }
             }
 
             if method == "POST" {
@@ -146,6 +154,4 @@ fn main() -> IoResult<()> {
     loop {
         thread::sleep(Duration::from_secs(60));
     }
-
-    Ok(())
 }

@@ -1,6 +1,6 @@
 [package]
 name = "darktide-local-server"
-version = "1.2.7"
+version = "1.3.0"
 edition = "2021"
 rust-version = "1.72"
 description = "Small local server for use with Warhammer 40,000: Darktide mods"
@@ -14,6 +14,9 @@ codegen-units = 1
 
 [dependencies]
 crossbeam = "0.8.2"
+ddsfile = "0.5.1"
+image = "0.24.7"
+image_dds = "0.1.1"
 lazy_static = "1.4.0"
 mime_guess = "2.0.4"
 regex = "1.9.5"
