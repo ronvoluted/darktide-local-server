@@ -107,18 +107,9 @@ fn main() -> IoResult<()> {
             let method = request.method().to_string();
 
             if method == "GET" {
-                if url == "/shutdown" {
-                    // Call the new handle_shutdown_request
-                    handle_shutdown_request();
-                }
-
-                if url.starts_with("/process_running") {
-                    process_running_sender.send(request).unwrap();
-                    continue;
-                }
-
-                if url.starts_with("/stop_process") {
-                    let response = handle_stop_process_request(&request);
+                if url.starts_with("/dds_image") {
+                    let response = handle_dds_image_request(&request)
+                        .unwrap_or_else(|| empty_response_with_status(StatusCode(400)));
                     let _ = request.respond(response);
                     continue;
                 }
@@ -130,9 +121,17 @@ fn main() -> IoResult<()> {
                     continue;
                 }
 
-                if url.starts_with("/dds_image") {
-                    let response = handle_dds_image_request(&request)
-                        .unwrap_or_else(|| empty_response_with_status(StatusCode(400)));
+                if url.starts_with("/process_running") {
+                    process_running_sender.send(request).unwrap();
+                    continue;
+                }
+
+                if url == "/shutdown" {
+                    handle_shutdown_request();
+                }
+
+                if url.starts_with("/stop_process") {
+                    let response = handle_stop_process_request(&request);
                     let _ = request.respond(response);
                     continue;
                 }
