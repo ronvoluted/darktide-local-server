@@ -20,6 +20,7 @@ mod utilities;
 mod handlers {
     pub mod dds_image;
     pub mod image;
+    pub mod list_directory;
     pub mod process_running;
     pub mod run;
     pub mod shutdown;
@@ -28,7 +29,8 @@ mod handlers {
 
 use constants::{Config, CONFIG_NAME, DEFAULT_PORT, MUTEX_NAME};
 use handlers::{
-    dds_image::handle_dds_image_request, image::handle_image_request, process_running::handle_process_running_request,
+    dds_image::handle_dds_image_request, image::handle_image_request,
+    list_directory::handle_list_directory, process_running::handle_process_running_request,
     run::handle_run_request, shutdown::handle_shutdown_request,
     stop_process::handle_stop_process_request,
 };
@@ -96,7 +98,8 @@ fn main() -> IoResult<()> {
     thread::spawn(move || {
         for request in process_running_receiver.iter() {
             let response = handle_process_running_request(&request, is_process_running);
-            let _ = request.respond(response.unwrap_or_else(|_| empty_response_with_status(StatusCode(400))));
+            let _ = request
+                .respond(response.unwrap_or_else(|_| empty_response_with_status(StatusCode(400))));
         }
     });
 
@@ -116,6 +119,13 @@ fn main() -> IoResult<()> {
 
                 if url.starts_with("/image") {
                     let response = handle_image_request(&request)
+                        .unwrap_or_else(|| empty_response_with_status(StatusCode(400)));
+                    let _ = request.respond(response);
+                    continue;
+                }
+
+                if url.starts_with("/list_directory") {
+                    let response = handle_list_directory(&request)
                         .unwrap_or_else(|| empty_response_with_status(StatusCode(400)));
                     let _ = request.respond(response);
                     continue;

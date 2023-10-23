@@ -50,15 +50,15 @@ pub fn json_response_with_status<T: Serialize>(
     response
 }
 
-/// Return a response with a boolean value as a string and status code 200 OK
-pub fn boolean_response_with_status(
-    status: StatusCode,
-    boolean: bool,
-) -> Response<Cursor<Vec<u8>>> {
-    let bool_str = boolean.to_string();
-    let cursor = Cursor::new(bool_str.into_bytes());
-    Response::new(status, vec![], cursor, None, None)
-}
+// /// Return a response with a boolean value as a string and status code 200 OK
+// pub fn boolean_response_with_status(
+//     status: StatusCode,
+//     boolean: bool,
+// ) -> Response<Cursor<Vec<u8>>> {
+//     let bool_str = boolean.to_string();
+//     let cursor = Cursor::new(bool_str.into_bytes());
+//     Response::new(status, vec![], cursor, None, None)
+// }
 
 /// Return an empty response with the given status code
 pub fn empty_response_with_status(status: StatusCode) -> Response<Cursor<Vec<u8>>> {
