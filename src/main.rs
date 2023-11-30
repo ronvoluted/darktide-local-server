@@ -1,4 +1,5 @@
 #![windows_subsystem = "windows"]
+#![allow(non_snake_case)]
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use lazy_static::lazy_static;
