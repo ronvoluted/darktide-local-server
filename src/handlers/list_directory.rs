@@ -2,9 +2,10 @@ use crate::utilities::empty_response_with_status;
 use image::GenericImageView;
 use lofty::{read_from_path, Accessor, AudioFile, TaggedFileExt};
 use mime_guess::mime;
+use rayon::prelude::*;
 use serde::Serialize;
 use serde_json::to_string;
-use std::{collections::HashMap, fs, io::Cursor};
+use std::{collections::HashMap, fs, io::Cursor, path::Path};
 use tiny_http::{Request, Response, StatusCode};
 use url::form_urlencoded;
 
@@ -47,8 +48,42 @@ struct FileInfo {
     height: Option<u32>,
 }
 
+#[derive(Serialize)]
+struct DirectoryResponse<T> {
+    contents: T,
+}
+
 impl FileInfo {
-    fn is_empty(&self) -> bool {
+    fn new() -> Self {
+        FileInfo {
+            created_at: None,
+            file_size: None,
+            last_modified: None,
+            mime_type: None,
+            name: None,
+            r#type: None,
+            artist: None,
+            album: None,
+            channels: None,
+            duration: None,
+            sample_rate: None,
+            title: None,
+            track: None,
+            width: None,
+            height: None,
+        }
+    }
+
+    fn is_empty(&self, general_info: bool) -> bool {
+        if general_info {
+            return self.created_at.is_none()
+                && self.file_size.is_none()
+                && self.last_modified.is_none()
+                && self.mime_type.is_none()
+                && self.name.is_none()
+                && self.r#type.is_none();
+        }
+
         self.artist.is_none()
             && self.album.is_none()
             && self.channels.is_none()
@@ -63,7 +98,6 @@ impl FileInfo {
 
 pub fn handle_list_directory(request: &Request) -> Option<Response<Cursor<Vec<u8>>>> {
     let query_part = request.url().split('?').nth(1)?;
-
     let params: HashMap<String, String> = form_urlencoded::parse(query_part.as_bytes())
         .into_owned()
         .collect();
@@ -79,174 +113,224 @@ pub fn handle_list_directory(request: &Request) -> Option<Response<Cursor<Vec<u8
     }
 
     let path = std::path::Path::new(&path_param);
-    let read_dir = fs::read_dir(path).ok()?;
 
     if general_info || audio_info || image_info {
-        let mut files_info: Vec<FileInfo> = Vec::new();
+        let files_info = gather_file_info(
+            &path,
+            general_info,
+            audio_info,
+            image_info,
+            sub_directories,
+            "",
+        );
 
-        for entry in read_dir {
+        let response_data = DirectoryResponse {
+            contents: files_info,
+        };
+
+        Some(create_json_response(response_data, StatusCode(200)))
+    } else {
+        let contents = list_directory_contents(path, sub_directories);
+        let response_data = DirectoryResponse { contents };
+
+        Some(create_json_response(response_data, StatusCode(200)))
+    }
+}
+
+fn list_directory_contents(path: &Path, include_subdirectories: bool) -> Vec<String> {
+    let mut contents = Vec::new();
+
+    _list_directory_contents(path, include_subdirectories, &mut contents, "");
+
+    contents
+}
+
+fn _list_directory_contents(
+    path: &Path,
+    include_subdirectories: bool,
+    contents: &mut Vec<String>,
+    prefix: &str,
+) {
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries {
             if let Ok(entry) = entry {
                 let path = entry.path();
 
-                let mut file_info = FileInfo {
-                    created_at: None,
-                    file_size: None,
-                    last_modified: None,
-                    mime_type: None,
-                    name: None,
-                    r#type: None,
-                    artist: None,
-                    album: None,
-                    channels: None,
-                    duration: None,
-                    sample_rate: None,
-                    title: None,
-                    track: None,
-                    width: None,
-                    height: None,
+                let file_name = match path.file_name() {
+                    Some(name) => match name.to_str() {
+                        Some(name_str) => format!("{}{}", prefix, name_str),
+                        None => continue, // Skip entry if not valid Unicode
+                    },
+                    None => continue,
                 };
 
-                if general_info {
-                    let metadata = fs::metadata(&path).ok()?;
+                if path.is_dir() && include_subdirectories {
+                    let new_prefix = format!("{}/", file_name);
 
-                    file_info.created_at = Some(
-                        metadata
-                            .created()
-                            .ok()?
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .ok()?
-                            .as_secs() as i64,
-                    );
-
-                    file_info.last_modified = Some(
-                        metadata
-                            .modified()
-                            .ok()?
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .ok()?
-                            .as_secs() as i64,
-                    );
-
-                    if !path.is_dir() {
-                        // kilobytes floored with precision of 3
-                        file_info.file_size =
-                            Some((metadata.len() as f64 / 1_024.0 * 1_000.0).floor() / 1_000.0);
-                    };
-
-                    file_info.mime_type = Some(
-                        mime_guess::from_path(&path)
-                            .first_or_octet_stream()
-                            .as_ref()
-                            .to_string(),
-                    );
-
-                    // Only return type if sub_directories query param is true
-                    // as it would be redundant when all items are files
-                    if sub_directories {
-                        file_info.r#type = Some(if path.is_dir() {
-                            "directory".into()
-                        } else {
-                            "file".into()
-                        });
-                    }
-                }
-
-                if path.is_file() {
-                    if audio_info {
-                        if let Ok(tagged_file) = read_from_path(&path) {
-                            let tag = tagged_file.first_tag();
-
-                            if let Some(tag) = tag {
-                                file_info.artist = tag.artist().map(|a| a.to_string());
-                                file_info.album = tag.album().map(|a| a.to_string());
-                                file_info.title = tag.title().map(|a| a.to_string());
-                                file_info.track = tag.track();
-                            }
-
-                            let properties = tagged_file.properties();
-
-                            file_info.channels = properties.channels();
-                            file_info.sample_rate = properties.sample_rate();
-
-                            let duration_millis = properties.duration().as_millis();
-                            let duration_secs: f64 = duration_millis as f64 / 1_000.0;
-                            file_info.duration = Some((duration_secs * 1_000.0).floor() / 1_000.0);
-                        }
-                    }
-
-                    if image_info {
-                        let mime_guess = mime_guess::from_path(&path).first_or_octet_stream();
-
-                        if mime_guess.type_() == mime::IMAGE {
-                            if let Ok(img) = image::open(&path) {
-                                let dimensions = img.dimensions();
-                                file_info.width = Some(dimensions.0);
-                                file_info.height = Some(dimensions.1);
-                            }
-                        }
-                    }
-                }
-
-                if general_info || !file_info.is_empty() {
-                    if sub_directories || !path.is_dir() {
-                        file_info.name = path.file_name()?.to_str().map(|s| s.to_string());
-
-                        files_info.push(file_info);
-                    }
+                    _list_directory_contents(&path, true, contents, &new_prefix);
+                } else {
+                    contents.push(file_name);
                 }
             }
         }
-
-        let json_response = to_string(&files_info).ok()?;
-        let json_length = json_response.len();
-        let cursor = Cursor::new(json_response.into_bytes());
-
-        let response = Response::new(
-            StatusCode(200),
-            vec![tiny_http::Header::from_bytes(&b"Content-Type"[..], "application/json").unwrap()],
-            cursor,
-            Some(json_length),
-            None,
-        );
-
-        Some(response)
-    } else {
-        let mut file_names = Vec::new();
-        let mut dir_names = Vec::new();
-
-        for entry in read_dir {
-            if let Ok(entry) = entry {
-                let path = entry.path();
-
-                if let Some(name) = path.file_name() {
-                    if let Some(name_str) = name.to_str() {
-                        let mut name_string = name_str.to_string();
-                        if path.is_dir() && sub_directories {
-                            name_string.push('/');
-                            dir_names.push(name_string);
-                        } else {
-                            file_names.push(name_string);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Put directories at start of array
-        dir_names.append(&mut file_names);
-
-        let json_response_str = to_string(&dir_names).ok()?;
-        let json_length = json_response_str.len();
-        let cursor = Cursor::new(json_response_str.into_bytes());
-
-        let response = Response::new(
-            StatusCode(200),
-            vec![tiny_http::Header::from_bytes(&b"Content-Type"[..], "application/json").unwrap()],
-            cursor,
-            Some(json_length),
-            None,
-        );
-
-        Some(response)
     }
+}
+
+fn gather_file_info(
+    path: &Path,
+    general_info: bool,
+    audio_info: bool,
+    image_info: bool,
+    sub_directories: bool,
+    prefix: &str,
+) -> Vec<FileInfo> {
+    let entries = match fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(_) => return Vec::new(),
+    };
+
+    entries
+        .par_bridge()
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+
+            if path.is_dir() && sub_directories {
+                let new_prefix = format!("{}{}/", prefix, entry.file_name().to_string_lossy());
+                Some(gather_file_info(
+                    &path,
+                    general_info,
+                    audio_info,
+                    image_info,
+                    sub_directories,
+                    &new_prefix,
+                ))
+            } else {
+                let metadata = fs::metadata(&path).ok()?;
+                let file_info = process_file_info(
+                    &path,
+                    &metadata,
+                    general_info,
+                    audio_info,
+                    image_info,
+                    &format!("{}{}", prefix, entry.file_name().to_string_lossy()),
+                );
+
+                if !file_info.is_empty(general_info) {
+                    Some(vec![file_info])
+                } else {
+                    None
+                }
+            }
+        })
+        .flatten()
+        .collect()
+}
+
+fn process_file_info(
+    path: &Path,
+    metadata: &fs::Metadata,
+    general_info: bool,
+    audio_info: bool,
+    image_info: bool,
+    relative_path: &str,
+) -> FileInfo {
+    let mut file_info = FileInfo::new();
+
+    file_info.name = Some(relative_path.to_string());
+
+    if general_info {
+        set_general_info(&mut file_info, metadata, path);
+    }
+
+    if path.is_file() {
+        if audio_info {
+            set_audio_info(&mut file_info, path);
+        }
+
+        if image_info {
+            set_image_info(&mut file_info, path);
+        }
+    }
+
+    file_info
+}
+
+fn set_general_info(file_info: &mut FileInfo, metadata: &fs::Metadata, path: &Path) {
+    file_info.created_at = metadata
+        .created()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs() as i64);
+
+    file_info.last_modified = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs() as i64);
+
+    if !metadata.is_dir() {
+        // File size in kilobytes (floored with precision of 3)
+        file_info.file_size = Some((metadata.len() as f64 / 1024.0).round());
+    }
+
+    file_info.mime_type = Some(
+        mime_guess::from_path(path)
+            .first_or_octet_stream()
+            .to_string(),
+    );
+
+    file_info.r#type = Some(if metadata.is_dir() {
+        "directory".to_string()
+    } else {
+        "file".to_string()
+    });
+}
+
+fn set_audio_info(file_info: &mut FileInfo, path: &Path) {
+    if let Ok(tagged_file) = read_from_path(path) {
+        let tag = tagged_file.first_tag();
+
+        if let Some(tag) = tag {
+            file_info.artist = tag.artist().map(|a| a.to_string());
+            file_info.album = tag.album().map(|a| a.to_string());
+            file_info.title = tag.title().map(|a| a.to_string());
+            file_info.track = tag.track();
+        }
+
+        let properties = tagged_file.properties();
+
+        file_info.channels = properties.channels();
+        file_info.sample_rate = properties.sample_rate();
+        file_info.duration = Some(properties.duration().as_secs_f64());
+    }
+}
+
+fn set_image_info(file_info: &mut FileInfo, path: &Path) {
+    let mime_type = mime_guess::from_path(path).first_or_octet_stream();
+
+    if mime_type.type_() == mime::IMAGE {
+        if let Ok(img) = image::open(path) {
+            let dimensions = img.dimensions();
+            file_info.width = Some(dimensions.0);
+            file_info.height = Some(dimensions.1);
+        }
+    }
+}
+
+fn create_json_response<T: Serialize>(
+    data: T,
+    status_code: StatusCode,
+) -> Response<Cursor<Vec<u8>>> {
+    let json_response = to_string(&data).unwrap();
+    let json_length = json_response.len();
+    let cursor = Cursor::new(json_response.into_bytes());
+
+    Response::new(
+        status_code,
+        vec![tiny_http::Header::from_bytes(&b"Content-Type"[..], "application/json").unwrap()],
+        cursor,
+        Some(json_length),
+        None,
+    )
 }

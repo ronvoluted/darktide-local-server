@@ -292,7 +292,7 @@ checksum = "7a81dae078cea95a014a339291cec439d2f232ebe854a9d672b796c6afafa9b7"
 
 [[package]]
 name = "darktide-local-server"
-version = "1.4.0"
+version = "1.4.3"
 dependencies = [
  "crossbeam",
  "ddsfile",
@@ -302,6 +302,7 @@ dependencies = [
  "lazy_static",
  "lofty",
  "mime_guess",
+ "rayon",
  "regex",
  "serde",
  "serde_json",
