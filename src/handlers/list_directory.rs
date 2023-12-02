@@ -2,12 +2,15 @@ use crate::utilities::empty_response_with_status;
 use image::GenericImageView;
 use lofty::{read_from_path, Accessor, AudioFile, TaggedFileExt};
 use mime_guess::mime;
-use rayon::prelude::*;
 use serde::Serialize;
 use serde_json::to_string;
 use std::{collections::HashMap, fs, io::Cursor, path::Path};
 use tiny_http::{Request, Response, StatusCode};
 use url::form_urlencoded;
+
+const DARKTIDE_STR: &str = "darktide";
+const DIRECTORY_STR: &str = "directory";
+const FILE_STR: &str = "file";
 
 #[derive(Serialize)]
 struct FileInfo {
@@ -15,13 +18,13 @@ struct FileInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     created_at: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    file_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     file_size: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_modified: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     mime_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     r#type: Option<String>,
 
@@ -53,14 +56,21 @@ struct DirectoryResponse<T> {
     contents: T,
 }
 
+#[derive(Serialize)]
+#[serde(untagged)]
+enum DirectoryItem {
+    FileInfo(FileInfo),
+    Directory(HashMap<String, DirectoryItem>),
+}
+
 impl FileInfo {
     fn new() -> Self {
         FileInfo {
             created_at: None,
+            file_path: None,
             file_size: None,
             last_modified: None,
             mime_type: None,
-            name: None,
             r#type: None,
             artist: None,
             album: None,
@@ -77,10 +87,10 @@ impl FileInfo {
     fn is_empty(&self, general_info: bool) -> bool {
         if general_info {
             return self.created_at.is_none()
+                && self.file_path.is_none()
                 && self.file_size.is_none()
                 && self.last_modified.is_none()
                 && self.mime_type.is_none()
-                && self.name.is_none()
                 && self.r#type.is_none();
         }
 
@@ -108,7 +118,7 @@ pub fn handle_list_directory(request: &Request) -> Option<Response<Cursor<Vec<u8
     let image_info = params.get("image_info").map_or(false, |v| v == "true");
     let sub_directories = params.get("sub_directories").map_or(false, |v| v == "true");
 
-    if !path_param.to_lowercase().contains("darktide") {
+    if !path_param.to_lowercase().contains(DARKTIDE_STR) {
         return Some(empty_response_with_status(StatusCode(403)));
     }
 
@@ -116,7 +126,7 @@ pub fn handle_list_directory(request: &Request) -> Option<Response<Cursor<Vec<u8
 
     if general_info || audio_info || image_info {
         let files_info = gather_file_info(
-            &path,
+            path,
             general_info,
             audio_info,
             image_info,
@@ -157,7 +167,7 @@ fn _list_directory_contents(
                 let path = entry.path();
 
                 let file_name = match path.file_name() {
-                    Some(name) => match name.to_str() {
+                    Some(file_path) => match file_path.to_str() {
                         Some(name_str) => format!("{}{}", prefix, name_str),
                         None => continue, // Skip entry if not valid Unicode
                     },
@@ -183,29 +193,20 @@ fn gather_file_info(
     image_info: bool,
     sub_directories: bool,
     prefix: &str,
-) -> Vec<FileInfo> {
+) -> HashMap<String, DirectoryItem> {
     let entries = match fs::read_dir(path) {
         Ok(entries) => entries,
-        Err(_) => return Vec::new(),
+        Err(_) => return HashMap::new(),
     };
 
+    let mut file_index = 0;
+
     entries
-        .par_bridge()
         .filter_map(|entry| {
             let entry = entry.ok()?;
             let path = entry.path();
 
-            if path.is_dir() && sub_directories {
-                let new_prefix = format!("{}{}/", prefix, entry.file_name().to_string_lossy());
-                Some(gather_file_info(
-                    &path,
-                    general_info,
-                    audio_info,
-                    image_info,
-                    sub_directories,
-                    &new_prefix,
-                ))
-            } else {
+            if path.is_file() {
                 let metadata = fs::metadata(&path).ok()?;
                 let file_info = process_file_info(
                     &path,
@@ -217,15 +218,33 @@ fn gather_file_info(
                 );
 
                 if !file_info.is_empty(general_info) {
-                    Some(vec![file_info])
+                    file_index += 1;
+                    Some((file_index.to_string(), DirectoryItem::FileInfo(file_info)))
                 } else {
                     None
                 }
+            } else if path.is_dir() && sub_directories {
+                let new_prefix = format!("{}{}/", prefix, entry.file_name().to_string_lossy());
+                let subdirectory_info = gather_file_info(
+                    &path,
+                    general_info,
+                    audio_info,
+                    image_info,
+                    sub_directories,
+                    &new_prefix,
+                );
+
+                if !subdirectory_info.is_empty() {
+                    Some((entry.file_name().to_string_lossy().to_string(), DirectoryItem::Directory(subdirectory_info)))
+                } else {
+                    None
+                }
+            } else {
+                None
             }
         })
-        .flatten()
         .collect()
-}
+}  
 
 fn process_file_info(
     path: &Path,
@@ -237,7 +256,7 @@ fn process_file_info(
 ) -> FileInfo {
     let mut file_info = FileInfo::new();
 
-    file_info.name = Some(relative_path.to_string());
+    file_info.file_path = Some(relative_path.to_string());
 
     if general_info {
         set_general_info(&mut file_info, metadata, path);
@@ -281,9 +300,9 @@ fn set_general_info(file_info: &mut FileInfo, metadata: &fs::Metadata, path: &Pa
     );
 
     file_info.r#type = Some(if metadata.is_dir() {
-        "directory".to_string()
+       DIRECTORY_STR.to_string()
     } else {
-        "file".to_string()
+        FILE_STR.to_string()
     });
 }
 
